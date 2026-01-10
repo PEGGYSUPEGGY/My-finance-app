@@ -4,7 +4,7 @@ import os
 from datetime import datetime, date
 
 st.set_page_config(page_title="理財小管家 v3", layout="centered")
-st.title("💳 信用卡 & 預算管理教練")
+st.title("💳 預算管理💰")
 
 EXPENSE_FILE = 'expenses.csv'
 CARD_FILE = 'cards.csv'
