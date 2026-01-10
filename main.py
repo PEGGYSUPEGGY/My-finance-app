@@ -3,8 +3,8 @@ import pandas as pd
 import os
 from datetime import datetime, date
 
-st.set_page_config(page_title="理財小管家 v3", layout="centered")
-st.title("💳 預算管理💰")
+st.set_page_config(page_title="理財小管家 v4", layout="centered")
+st.title("💰 預算管理 💰")
 
 EXPENSE_FILE = 'expenses.csv'
 CARD_FILE = 'cards.csv'
@@ -25,7 +25,7 @@ if 'expenses' not in st.session_state:
 
 # --- 側邊欄：預算與卡片設定 ---
 with st.sidebar:
-    st.header("🎯 本月預算設定")
+    st.header("🎯 本月預預算設定")
     month_budget = st.number_input("本月可花費總額", min_value=0, value=20000, step=1000)
     
     st.divider()
@@ -46,7 +46,7 @@ with st.sidebar:
             st.session_state.cards.to_csv(CARD_FILE, index=False)
             st.rerun()
 
-# --- 主畫面：預算倒扣統計 ---
+# --- 1. 預算倒扣統計 ---
 st.subheader("📊 本月預算剩餘")
 total_spent = st.session_state.expenses['金額'].sum()
 remaining = month_budget - total_spent
@@ -59,28 +59,42 @@ if remaining < 0:
     st.error(f"😱 警告：你已經超支 ${abs(remaining):,.0f} 元了！")
 elif remaining < (month_budget * 0.2):
     st.warning(f"⚠️ 注意：預算只剩不到 20%，請節制消費。")
-else:
-    st.success(f"✅ 目前預算充足，請繼續保持。")
 
-# --- 主畫面：還款教練建議 ---
+# --- 2. 補回：繳費提醒 (補在這裡了！) ---
+st.divider()
+st.subheader("⏰ 繳費提醒")
+if not st.session_state.cards.empty:
+    today_day = date.today().day
+    has_card = False
+    for _, row in st.session_state.cards.iterrows():
+        if row['繳款日'] > 0:
+            has_card = True
+            days_left = int(row['繳款日']) - today_day
+            if days_left >= 0:
+                st.info(f"💡 **{row['卡片名稱']}**：剩餘 **{days_left}** 天繳款")
+            else:
+                st.warning(f"⚠️ **{row['卡片名稱']}**：本月繳款日已過")
+    if not has_card:
+        st.write("目前沒有設定繳款日的卡片。")
+else:
+    st.write("請先在側邊欄新增卡片。")
+
+# --- 3. 財務教練建議 ---
 st.divider()
 st.subheader("💡 財務負擔友善建議")
 if not st.session_state.expenses.empty:
     card_sum = st.session_state.expenses.groupby('卡片名稱')['金額'].sum()
-    
     for card, amount in card_sum.items():
         if card != "現金":
             st.write(f"📌 **{card}** 本期應繳：**${amount:,.0f}**")
             if amount > (month_budget * 0.5):
-                st.error("👉 這張卡支出佔預算一半以上，建議檢視是否有大筆分期，或考慮部分全額繳清以節省利息。")
-            elif amount > remaining and remaining > 0:
-                st.warning("👉 本期卡費已超過剩餘預算，建議動用存款支應，下個月需調降預算。")
+                st.error("👉 支出佔預算一半以上，負擔較重。")
             else:
-                st.info("👉 負擔在理想範圍內，建議「全額繳清」以維持優良信用評分。")
+                st.info("👉 負擔範圍內，建議全額繳清避免循環利息。")
 else:
-    st.write("暫無消費紀錄，尚無建議。")
+    st.write("尚無資料提供建議。")
 
-# --- 快速記帳與明細 (保留原有功能) ---
+# --- 4. 快速記帳與清單 ---
 st.divider()
 st.subheader("✍️ 快速記帳")
 with st.form("expense_form", clear_on_submit=True):
@@ -95,10 +109,9 @@ with st.form("expense_form", clear_on_submit=True):
         st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
         st.rerun()
 
-st.divider()
 if not st.session_state.expenses.empty:
     st.dataframe(st.session_state.expenses, use_container_width=True)
-    if st.button("🗑️ 刪除最後一筆"):
+    if st.button("🗑️ 刪除最後一筆紀錄"):
         st.session_state.expenses = st.session_state.expenses[:-1]
         st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
         st.rerun()
