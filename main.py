@@ -7,7 +7,6 @@ from datetime import datetime, date
 # --- 1. 頁面基本設定與 CSS ---
 st.set_page_config(page_title="理財小管家 v4", layout="centered")
 
-# CSS 優化：縮小間距以利手機顯示
 st.markdown("""
     <style>
     [data-testid="stColumn"] { padding: 0px 2px !important; }
@@ -46,7 +45,7 @@ with st.sidebar:
     month_budget = st.number_input("本月總預算", min_value=0, value=20000)
     st.divider()
     st.header("⚙️ 卡片管理")
-    new_card = st.text_input("新增項目", placeholder="卡片或帳戶名稱")
+    new_card = st.text_input("新增項目", placeholder="卡片名稱")
     new_due = st.number_input("繳款日(0-31)", 0, 31, 0)
     if st.button("確認新增", key="add_card", use_container_width=True):
         if new_card:
@@ -75,7 +74,7 @@ m1.metric("個人", f"${total_spent:,.0f}")
 m2.metric("剩餘", f"${remaining:,.0f}")
 m3.metric("公司", f"${company_total:,.0f}")
 
-# --- 5. ⏰ 帳單提醒繳費 (補回) ---
+# --- 5. ⏰ 帳單提醒繳費 ---
 st.divider()
 st.subheader("⏰ 繳費提醒")
 if not st.session_state.cards.empty:
@@ -94,7 +93,7 @@ if not st.session_state.cards.empty:
 else:
     st.caption("請先在側邊欄新增卡片資訊。")
 
-# --- 6. 💡 財務教練建議 (補回) ---
+# --- 6. 💡 財務教練建議 ---
 st.divider()
 st.subheader("💡 財務教練建議")
 if not st.session_state.expenses.empty:
@@ -126,23 +125,11 @@ with st.form("expense_form", clear_on_submit=True):
             st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
             st.rerun()
 
-# --- 8. 明細清單 (手機端一行化) ---
+# --- 8. 消費明細 ---
 st.divider()
-col_t, col_d = st.columns([1, 1])
-with col_t:
-    st.subheader("📜 消費明細")
+st.subheader("📜 消費明細")
 
 if not st.session_state.expenses.empty:
-    with col_d:
-        try:
-            buf = io.BytesIO()
-            with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-                export_df = st.session_state.expenses.sort_values(by='日期', ascending=False)
-                export_df.to_excel(writer, index=False)
-            st.download_button("📥 Excel", data=buf.getvalue(), file_name=f"finance_{date.today()}.xlsx")
-        except:
-            st.caption("Excel 準備中...")
-
     st.session_state.expenses['日期'] = pd.to_datetime(st.session_state.expenses['日期'])
     display_df = st.session_state.expenses.sort_values(by='日期', ascending=False)
 
@@ -162,5 +149,21 @@ if not st.session_state.expenses.empty:
             st.session_state.expenses = st.session_state.expenses.drop(index)
             st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
             st.rerun()
+    
+    # --- 9. Excel 下載按鈕 (移動到最下方) ---
+    st.write("---")
+    try:
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+            export_df = st.session_state.expenses.sort_values(by='日期', ascending=False)
+            export_df.to_excel(writer, index=False)
+        st.download_button(
+            label="📥 下載完整消費明細 (Excel)", 
+            data=buf.getvalue(), 
+            file_name=f"finance_{date.today()}.xlsx",
+            use_container_width=True
+        )
+    except:
+        st.warning("Excel 功能準備中，請確認 requirements.txt 是否已加入 openpyxl")
 else:
     st.info("目前無紀錄")
