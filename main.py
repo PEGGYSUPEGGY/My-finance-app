@@ -81,7 +81,7 @@ with st.form("expense_form", clear_on_submit=True):
     c = st.selectbox("支付工具", c_list)
     i = st.text_input("項目名稱")
     a = st.number_input("金額", min_value=0, step=1)
-    is_comp = st.checkbox("這是一筆公司費用 (不計入個人預算)")
+    is_comp = st.checkbox("公司費用 (不計入個人預算)")
     
     if st.form_submit_button("儲存紀錄", use_container_width=True):
         if i:
