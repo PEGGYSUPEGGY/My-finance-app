@@ -4,14 +4,22 @@ import os
 import io
 from datetime import datetime, date
 
-# --- 1. 頁面基本設定與 CSS ---
+# --- 1. 頁面基本設定與 CSS 優化 ---
 st.set_page_config(page_title="理財小管家 v4", layout="centered")
 
+# CSS 修正：防止手機側邊欄按鈕文字垂直排列，並優化明細間距
 st.markdown("""
     <style>
+    /* 修正側邊欄按鈕文字 */
+    .stSidebar div[data-testid="stVerticalBlock"] div[data-testid="stButton"] button {
+        width: 100% !important;
+        white-space: nowrap !important;
+    }
+    /* 優化手機明細間距 */
     [data-testid="stColumn"] { padding: 0px 2px !important; }
-    .stButton button { padding: 0px; height: 1.6rem; width: 1.6rem; }
     div.stMarkdown p { margin-bottom: 0px; font-size: 14px; }
+    /* 垃圾桶按鈕大小 */
+    .stButton button { padding: 0px; height: 1.8rem; width: 1.8rem; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -47,7 +55,8 @@ with st.sidebar:
     st.header("⚙️ 卡片管理")
     new_card = st.text_input("新增項目", placeholder="卡片名稱")
     new_due = st.number_input("繳款日(0-31)", 0, 31, 0)
-    if st.button("確認新增", key="add_card", use_container_width=True):
+    # 使用 use_container_width 確保按鈕填滿
+    if st.button("確認新增卡片", key="add_card", use_container_width=True):
         if new_card:
             new_df = pd.DataFrame([[new_card, new_due]], columns=["卡片名稱", "繳款日"])
             st.session_state.cards = pd.concat([st.session_state.cards, new_df], ignore_index=True)
@@ -56,9 +65,11 @@ with st.sidebar:
     
     if not st.session_state.cards.empty:
         card_to_del = st.selectbox("移除項目", st.session_state.cards["卡片名稱"].tolist())
-        if st.button("確認刪除卡片", type="primary"):
+        if st.button("確認刪除卡片", type="primary", use_container_width=True):
+            st.session_state.expenses = st.session_state.expenses[st.session_state.expenses["卡片名稱"] != card_to_del]
             st.session_state.cards = st.session_state.cards[st.session_state.cards["卡片名稱"] != card_to_del]
             st.session_state.cards.to_csv(CARD_FILE, index=False)
+            st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
             st.rerun()
 
 # --- 4. 預算統計看板 ---
@@ -91,7 +102,7 @@ if not st.session_state.cards.empty:
     if not has_card_reminder:
         st.caption("目前無設定繳款日。")
 else:
-    st.caption("請先在側邊欄新增卡片資訊。")
+    st.caption("請先在側邊欄新增卡片。")
 
 # --- 6. 💡 財務教練建議 ---
 st.divider()
@@ -102,11 +113,11 @@ if not st.session_state.expenses.empty:
         if card != "現金":
             st.markdown(f"📌 **{card}** 本期應繳：**${amount:,.0f}**")
             if amount > (month_budget * 0.5):
-                st.error("👉 支出超過預算一半，負擔較重。")
+                st.error("👉 支出超過預算一半，建議節制。")
             else:
                 st.success("👉 負擔範圍內，建議全額繳清。")
 else:
-    st.caption("尚無資料提供建議。")
+    st.caption("尚無資料。")
 
 # --- 7. 快速記帳 ---
 st.divider()
@@ -149,8 +160,8 @@ if not st.session_state.expenses.empty:
             st.session_state.expenses = st.session_state.expenses.drop(index)
             st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
             st.rerun()
-    
-    # --- 9. Excel 下載按鈕 (移動到最下方) ---
+
+    # --- 9. Excel 下載 (移至明細最下方) ---
     st.write("---")
     try:
         buf = io.BytesIO()
@@ -158,12 +169,12 @@ if not st.session_state.expenses.empty:
             export_df = st.session_state.expenses.sort_values(by='日期', ascending=False)
             export_df.to_excel(writer, index=False)
         st.download_button(
-            label="📥 下載完整消費明細 (Excel)", 
+            label="📥 下載 Excel 報表", 
             data=buf.getvalue(), 
             file_name=f"finance_{date.today()}.xlsx",
             use_container_width=True
         )
     except:
-        st.warning("Excel 功能準備中，請確認 requirements.txt 是否已加入 openpyxl")
+        st.warning("Excel 功能準備中...")
 else:
     st.info("目前無紀錄")
