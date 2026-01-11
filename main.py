@@ -3,178 +3,165 @@ import pandas as pd
 import os
 import io
 from datetime import datetime, date
+import calendar
 
-# --- 1. 頁面基本設定與 CSS 優化 ---
-st.set_page_config(page_title="理財小管家 v4", layout="centered")
+# --- 1. 頁面基本設定與財務常數 ---
+st.set_page_config(page_title="財務顧問小管家 v5", layout="centered")
 
-# CSS 修正：防止手機側邊欄按鈕文字垂直排列，並優化明細間距
+# 你的財務常數設定
+MONTHLY_INCOME = 50000
+FIXED_COSTS = 10000 + 11644 + 599  # 房貸 + 信貸 + 電話費
+TARGET_SAVING = 10000             # 每月目標儲蓄
+DAILY_LIMIT_GOAL = 570            # 每日花費目標
+
+# CSS 優化
 st.markdown("""
     <style>
-    /* 修正側邊欄按鈕文字 */
-    .stSidebar div[data-testid="stVerticalBlock"] div[data-testid="stButton"] button {
-        width: 100% !important;
-        white-space: nowrap !important;
-    }
-    /* 優化手機明細間距 */
-    [data-testid="stColumn"] { padding: 0px 2px !important; }
-    div.stMarkdown p { margin-bottom: 0px; font-size: 14px; }
-    /* 垃圾桶按鈕大小 */
-    .stButton button { padding: 0px; height: 1.8rem; width: 1.8rem; }
+    .stMetric { background-color: #f0f2f6; padding: 10px; border-radius: 10px; }
+    [data-testid="stColumn"] { padding: 5px !important; }
+    div.stMarkdown p { font-size: 14px; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("💰 預算管理 💰")
+EXPENSE_FILE = 'expenses_v2.csv'
+CARD_FILE = 'cards_v2.csv'
 
-EXPENSE_FILE = 'expenses.csv'
-CARD_FILE = 'cards.csv'
-
-# --- 2. 資料讀取 ---
+# --- 2. 資料讀取函數 ---
 def load_data(file, columns):
     if os.path.exists(file):
         try:
             df = pd.read_csv(file)
             if "日期" in df.columns:
                 df["日期"] = pd.to_datetime(df["日期"]).dt.strftime('%Y-%m-%d')
-            if "公司費用" not in df.columns:
-                df["公司費用"] = False
+            for col in columns:
+                if col not in df.columns:
+                    df[col] = False if "已" in col or "公司" in col else 0
             return df
         except:
             return pd.DataFrame(columns=columns)
     return pd.DataFrame(columns=columns)
 
+# 初始化 Session State
 if 'cards' not in st.session_state:
-    st.session_state.cards = load_data(CARD_FILE, ["卡片名稱", "繳款日"])
+    st.session_state.cards = load_data(CARD_FILE, ["卡片名稱", "繳款日", "利率", "目前餘額"])
 if 'expenses' not in st.session_state:
-    st.session_state.expenses = load_data(EXPENSE_FILE, ["日期", "卡片名稱", "項目", "金額", "公司費用"])
+    st.session_state.expenses = load_data(EXPENSE_FILE, ["日期", "卡片名稱", "項目", "金額", "公司費用", "已入帳"])
 
-# --- 3. 側邊欄：卡片管理 ---
+# --- 3. 側邊欄：卡片與債務管理 ---
 with st.sidebar:
-    st.header("🎯 本月預算設定")
-    month_budget = st.number_input("本月總預算", min_value=0, value=20000)
-    st.divider()
-    st.header("⚙️ 卡片管理")
-    new_card = st.text_input("新增項目", placeholder="卡片名稱")
-    new_due = st.number_input("繳款日(0-31)", 0, 31, 0)
-    # 使用 use_container_width 確保按鈕填滿
-    if st.button("確認新增卡片", key="add_card", use_container_width=True):
-        if new_card:
-            new_df = pd.DataFrame([[new_card, new_due]], columns=["卡片名稱", "繳款日"])
-            st.session_state.cards = pd.concat([st.session_state.cards, new_df], ignore_index=True)
-            st.session_state.cards.to_csv(CARD_FILE, index=False)
-            st.rerun()
+    st.header("🎯 核心預算設定")
+    st.write(f"月薪：`${MONTHLY_INCOME:,.0f}`")
+    st.write(f"固定支出：`${FIXED_COSTS:,.0f}`")
+    st.write(f"目標儲蓄：`${TARGET_SAVING:,.0f}`")
     
-    if not st.session_state.cards.empty:
-        card_to_del = st.selectbox("移除項目", st.session_state.cards["卡片名稱"].tolist())
-        if st.button("確認刪除卡片", type="primary", use_container_width=True):
-            st.session_state.expenses = st.session_state.expenses[st.session_state.expenses["卡片名稱"] != card_to_del]
-            st.session_state.cards = st.session_state.cards[st.session_state.cards["卡片名稱"] != card_to_del]
+    st.divider()
+    st.header("💳 債務清單 (核心 A)")
+    with st.expander("新增/編輯債務"):
+        new_card = st.text_input("銀行名稱")
+        new_due = st.number_input("繳款日", 1, 31, 10)
+        new_rate = st.number_input("利率 (%)", 0.0, 15.0, 7.7)
+        new_bal = st.number_input("目前欠款金額", 0)
+        if st.button("更新債務資訊", use_container_width=True):
+            new_df = pd.DataFrame([[new_card, new_due, new_rate, new_bal]], 
+                                 columns=["卡片名稱", "繳款日", "利率", "目前餘額"])
+            st.session_state.cards = pd.concat([st.session_state.cards, new_df], ignore_index=True).drop_duplicates('卡片名稱', keep='last')
             st.session_state.cards.to_csv(CARD_FILE, index=False)
-            st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
             st.rerun()
 
-# --- 4. 預算統計看板 ---
-p_exp = st.session_state.expenses[st.session_state.expenses['公司費用'] == False]
-c_exp = st.session_state.expenses[st.session_state.expenses['公司費用'] == True]
-total_spent = p_exp['金額'].sum()
-company_total = c_exp['金額'].sum()
-remaining = month_budget - total_spent
+# --- 4. 預算預警儀表板 (核心 C) ---
+st.title("💰 財務教練儀表板")
 
-st.subheader("📊 預算統計")
+# 計算時間與預算
+today = date.today()
+last_day = calendar.monthrange(today.year, today.month)[1]
+days_left = last_day - today.day + 1
+
+# 個人支出統計 (排除公司費用)
+personal_spent = st.session_state.expenses[st.session_state.expenses['公司費用'] == False]['金額'].sum()
+# 公司支出統計
+company_unpaid = st.session_state.expenses[(st.session_state.expenses['公司費用'] == True) & (st.session_state.expenses['已入帳'] == False)]['金額'].sum()
+
+# 計算每日預算
+# 可用餘額 = 月薪 - 固定支出 - 儲蓄 - 已花掉的個人支出
+current_liquid = MONTHLY_INCOME - FIXED_COSTS - TARGET_SAVING - personal_spent
+daily_budget = current_liquid / days_left if days_left > 0 else 0
+
 m1, m2, m3 = st.columns(3)
-m1.metric("個人", f"${total_spent:,.0f}")
-m2.metric("剩餘", f"${remaining:,.0f}")
-m3.metric("公司", f"${company_total:,.0f}")
+m1.metric("本月剩餘可用", f"${current_liquid:,.0f}")
+m2.metric("今日預算上限", f"${daily_budget:,.0f}")
+m3.metric("待收回公款", f"${company_unpaid:,.0f}")
 
-# --- 5. ⏰ 帳單提醒繳費 ---
-st.divider()
-st.subheader("⏰ 繳費提醒")
-if not st.session_state.cards.empty:
-    today_day = date.today().day
-    has_card_reminder = False
-    for _, row in st.session_state.cards.iterrows():
-        if row['繳款日'] > 0:
-            has_card_reminder = True
-            days_left = int(row['繳款日']) - today_day
-            if days_left >= 0:
-                st.info(f"💡 **{row['卡片名稱']}**：剩餘 **{days_left}** 天繳款")
-            else:
-                st.warning(f"⚠️ **{row['卡片名稱']}**：本月繳款日已過")
-    if not has_card_reminder:
-        st.caption("目前無設定繳款日。")
+if daily_budget < DAILY_LIMIT_GOAL:
+    st.error(f"⚠️ 警訊：今日預算已低於目標 ${DAILY_LIMIT_GOAL}，請控制開銷！")
 else:
-    st.caption("請先在側邊欄新增卡片。")
+    st.success("✅ 財務狀況良好，請繼續保持。")
 
-# --- 6. 💡 財務教練建議 ---
+# --- 5. 1/13 專屬還款計畫建議 ---
+if today.day <= 13:
+    st.info("💡 **顧問提醒：1/13 代墊款入帳還款計畫**")
+    st.markdown(f"""
+    1. **台新結清**：$3,359 (15%)
+    2. **富邦結清**：$8,922 (15%)
+    3. **中信減壓**：剩餘資金優先匯入中信卡抵銷舊帳。
+    """)
+
+# --- 6. 代墊款追蹤與快速記帳 (核心 B) ---
 st.divider()
-st.subheader("💡 財務教練建議")
+with st.expander("✍️ 快速記帳 / 新增代墊", expanded=False):
+    with st.form("expense_form", clear_on_submit=True):
+        d = st.date_input("日期", date.today())
+        c_list = st.session_state.cards["卡片名稱"].tolist() if not st.session_state.cards.empty else ["現金"]
+        c = st.selectbox("使用工具", c_list)
+        i = st.text_input("消費項目")
+        a = st.number_input("金額", min_value=0, step=1)
+        is_comp = st.checkbox("🏢 這是幫公司代墊的 (不計入個人預算)")
+        if st.form_submit_button("確認儲存", use_container_width=True):
+            if i:
+                new_row = pd.DataFrame([[str(d), c, i, a, is_comp, False]], 
+                                     columns=["日期", "卡片名稱", "項目", "金額", "公司費用", "已入帳"])
+                st.session_state.expenses = pd.concat([st.session_state.expenses, new_row], ignore_index=True)
+                st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
+                st.rerun()
+
+# --- 7. 消費明細與公款銷帳 ---
+st.subheader("📜 消費與代墊明細")
 if not st.session_state.expenses.empty:
-    card_sum = st.session_state.expenses.groupby('卡片名稱')['金額'].sum()
-    for card, amount in card_sum.items():
-        if card != "現金":
-            st.markdown(f"📌 **{card}** 本期應繳：**${amount:,.0f}**")
-            if amount > (month_budget * 0.5):
-                st.error("👉 支出超過預算一半，建議節制。")
-            else:
-                st.success("👉 負擔範圍內，建議全額繳清。")
+    df_display = st.session_state.expenses.copy()
+    df_display['日期'] = pd.to_datetime(df_display['日期'])
+    df_display = df_display.sort_values(by='日期', ascending=False)
+
+    for index, row in df_display.iterrows():
+        col1, col2, col3, col4 = st.columns([2, 4, 2, 2])
+        
+        # 日期與類型
+        col1.write(row['日期'].strftime('%m/%d'))
+        
+        # 項目與標籤
+        label = "🏢" if row['公司費用'] else "👤"
+        status = " (已入帳)" if row['已入帳'] else ""
+        col2.markdown(f"{label} **{row['項目']}**{status}<br><small>{row['卡片名稱']}</small>", unsafe_allow_html=True)
+        
+        # 金額
+        col3.write(f"**${row['金額']:,.0f}**")
+        
+        # 操作
+        if row['公司費用'] and not row['已入帳']:
+            if col4.button("📥", key=f"rec_{index}", help="標記此筆公款已領回"):
+                st.session_state.expenses.at[index, '已入帳'] = True
+                st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
+                st.rerun()
+        else:
+            if col4.button("🗑️", key=f"del_{index}"):
+                st.session_state.expenses = st.session_state.expenses.drop(index)
+                st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
+                st.rerun()
 else:
-    st.caption("尚無資料。")
+    st.caption("尚無消費紀錄。")
 
-# --- 7. 快速記帳 ---
+# --- 8. 匯出功能 ---
 st.divider()
-st.subheader("✍️ 快速記帳")
-with st.form("expense_form", clear_on_submit=True):
-    d = st.date_input("日期", date.today())
-    c_list = st.session_state.cards["卡片名稱"].tolist() if not st.session_state.cards.empty else ["現金"]
-    c = st.selectbox("工具", c_list)
-    i = st.text_input("項目")
-    a = st.number_input("金額", min_value=0, step=1)
-    is_comp = st.checkbox("🏢 公司費用 (不計入個人預算)")
-    if st.form_submit_button("儲存紀錄", use_container_width=True):
-        if i:
-            new_row = pd.DataFrame([[str(d), c, i, a, is_comp]], columns=["日期", "卡片名稱", "項目", "金額", "公司費用"])
-            st.session_state.expenses = pd.concat([st.session_state.expenses, new_row], ignore_index=True)
-            st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
-            st.rerun()
-
-# --- 8. 消費明細 ---
-st.divider()
-st.subheader("📜 消費明細")
-
-if not st.session_state.expenses.empty:
-    st.session_state.expenses['日期'] = pd.to_datetime(st.session_state.expenses['日期'])
-    display_df = st.session_state.expenses.sort_values(by='日期', ascending=False)
-
-    st.write("---")
-    for index, row in display_df.iterrows():
-        c1, c2, c3, c4 = st.columns([1.5, 4.5, 2.5, 1.5])
-        c1.write(row['日期'].strftime('%m/%d'))
-        
-        icon = "🏢" if row['公司費用'] else "👤"
-        item_label = f"**{icon}{row['項目']}**"
-        sub_label = f"<span style='font-size:10px; color:gray;'>{row['卡片名稱']}</span>"
-        c2.markdown(f"{item_label}<br>{sub_label}", unsafe_allow_html=True)
-        
-        c3.write(f"**${row['金額']:,.0f}**")
-        
-        if c4.button("🗑️", key=f"del_{index}"):
-            st.session_state.expenses = st.session_state.expenses.drop(index)
-            st.session_state.expenses.to_csv(EXPENSE_FILE, index=False)
-            st.rerun()
-
-    # --- 9. Excel 下載 (移至明細最下方) ---
-    st.write("---")
-    try:
-        buf = io.BytesIO()
-        with pd.ExcelWriter(buf, engine='openpyxl') as writer:
-            export_df = st.session_state.expenses.sort_values(by='日期', ascending=False)
-            export_df.to_excel(writer, index=False)
-        st.download_button(
-            label="📥 下載 Excel 報表", 
-            data=buf.getvalue(), 
-            file_name=f"finance_{date.today()}.xlsx",
-            use_container_width=True
-        )
-    except:
-        st.warning("Excel 功能準備中...")
-else:
-    st.info("目前無紀錄")
+if st.button("📥 匯出 Excel 報表", use_container_width=True):
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        st.session_state.expenses.to_excel(writer, index=False)
+    st.download_button(label="點此下載", data=buf.getvalue(), file_name=f"財務報表_{date.today()}.xlsx")
